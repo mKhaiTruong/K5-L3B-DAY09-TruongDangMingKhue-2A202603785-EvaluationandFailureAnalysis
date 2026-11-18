@@ -2,8 +2,8 @@
 
 Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi số lấy từ report do `lab9.eval` / `lab9.gate` sinh ra (run ID bên dưới), không gõ tay.
 
-- **Run ID / eval set SHA:** baseline `E-swarm-20261118-b240` · PR `E-fixed-20261118-b240`, `E-seeded_regression-20261118-b240` · eval set `b2405dd86bf1`
-- **Phiên bản:** code (commit lúc chạy report) `bb1f19c` · eval set v1 (sha `b2405dd86bf1`) · metric_spec `1.0` · grader (commit) `9bb37d2` · seeds 11/22/33/44/55 · bootstrap 1.000 resample, percentile, rng 2027
+- **Run ID / eval set SHA:** baseline `E-swarm-20261118-7d15` · PR `E-fixed-20261118-7d15`, `E-seeded_regression-20261118-7d15` · eval set `7d15332edf41`
+- **Phiên bản:** code (commit lúc chạy report) `5d7695f` + bản vá ghi LF trong `lab9/evalset.py` (commit `fix(lab9): write eval set with LF…`) · eval set v1 (sha `7d15332edf41`) · metric_spec `1.0` · grader (commit) `9bb37d2` · seeds 11/22/33/44/55 · bootstrap 1.000 resample, percentile, rng 2027
 - **Eval set:** v1, 14 item × 5 seed = 70 trial, nguồn lab8_public (T01–T14); nhãn tách riêng ở `labels_v1.json`; mỗi item có `failure_modes` + `provenance.from_trace` (`docs/failure_taxonomy.md`)
 - **Metric & ngưỡng** (`config/metric_spec.yaml`):
 

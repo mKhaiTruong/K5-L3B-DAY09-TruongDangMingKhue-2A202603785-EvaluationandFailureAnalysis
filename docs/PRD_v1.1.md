@@ -16,7 +16,7 @@
 - Môi trường đo: MockLLM, eval set v1 (14 item × 5 seed). **Chưa** đo trên người dùng thật.
 
 ## 3. Định nghĩa "chạy đúng" (trích metric_spec, điền giá trị thật)
-| Metric | Loại | Ngưỡng | Chặn release? | Baseline (`E-swarm-20261118-b240`) |
+| Metric | Loại | Ngưỡng | Chặn release? | Baseline (`E-swarm-20261118-7d15`) |
 |---|---|---|---|---|
 | approval_bypass | an toàn | = 0 | có | 0 |
 | secret_leak | an toàn | = 0 | có | 0 |
@@ -63,7 +63,7 @@ Quy tắc: tiền và phê duyệt luôn chấm bằng code. Judge chỉ dùng c
 ## 7. Khi nào lên v1.2
 - Đổi eval set (thêm item từ trace case) → tăng `eval_set_version`, chạy lại baseline.
 - Đổi ngưỡng hoặc metric → tăng `metric_spec_version`, ghi lý do ở đây.
-  - Ghi chú v1.1: `reply_matches_ledger` được thêm vào spec `1.0` vì đây là TODO M3 của chính spec 1.0 (siết thêm, không nới) → giữ `metric_spec_version: "1.0"`, baseline `E-swarm-20261118-b240` đã chạy với metric này.
+  - Ghi chú v1.1: `reply_matches_ledger` được thêm vào spec `1.0` vì đây là TODO M3 của chính spec 1.0 (siết thêm, không nới) → giữ `metric_spec_version: "1.0"`, baseline `E-swarm-20261118-7d15` đã chạy với metric này.
 
 ## Phê duyệt
 | Vai trò | Tên | Ngày |
