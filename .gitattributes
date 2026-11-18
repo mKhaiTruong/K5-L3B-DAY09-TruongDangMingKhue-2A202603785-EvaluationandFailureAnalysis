@@ -1,0 +1,4 @@
+# Eval-set files are hashed (lab9.evalset.sha12) and compared with Linux CI:
+# keep them LF in every working copy, even with core.autocrlf=true on Windows.
+src/data/eval/*.jsonl text eol=lf
+src/data/eval/*.json  text eol=lf
