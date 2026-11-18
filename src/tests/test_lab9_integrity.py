@@ -3,16 +3,17 @@ import copy
 
 import pytest
 
+from lab9.eval import aggregate
 from lab9.gate import integrity_check
 
 pytestmark = pytest.mark.student
 
 
 def _report():
-    rows = [{"item_id": f"I{i}", "seed": s, "slices": ["money_movement"] if i == 0 else [], "pass_rate": True}
+    rows = [{"item_id": f"I{i}", "seed": s, "slices": ["money_movement"] if i == 0 else [], "pass_rate": True, "cost": 1.0}
             for i in range(2) for s in (1, 2)]
     return {"manifest": {"items": 2, "seeds": [1, 2]}, "rows": rows, "evaluator_failures": [],
-            "metrics": {"pass_rate": 1.0}}
+            "metrics": aggregate(rows, ["pass_rate"])}
 
 
 def _spec():
@@ -29,6 +30,13 @@ def test_nan_metric_is_caught():
     pr = _report()
     pr["metrics"]["pass_rate"] = float("nan")
     assert integrity_check(pr, _report(), _spec())
+
+
+def test_forged_aggregate_is_caught():
+    pr = _report()
+    pr["rows"][0]["pass_rate"] = False   # rows say 0.75 ...
+    pr["metrics"]["pass_rate"] = 1.0     # ... but the headline number was left "pretty"
+    assert any("pass_rate" in p for p in integrity_check(pr, _report(), _spec()))
 
 
 def test_dropped_and_duplicated_rows_are_caught():

@@ -16,7 +16,7 @@ from pathlib import Path
 
 from lab8.console import utf8_stdio
 from lab9 import stats
-from lab9.eval import SPEC, load_spec, per_item
+from lab9.eval import SPEC, aggregate, load_spec, per_item
 
 
 def _looser(label: str, old: dict, new: dict, old_blocking: bool, new_blocking: bool) -> list[str]:
@@ -89,7 +89,24 @@ def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = N
     if moved:
         problems.append(f"slice tags changed for: {', '.join(sorted(moved))}")
 
-    # 6. Ratchet: only when the eval-set version is unchanged
+    # 6. Aggregates the report claims must be reproducible from its rows
+    #    (a hand-edited `metrics` block lies). Only claimed keys are compared.
+    if not problems:
+        row_metrics = [m["id"] for m in spec["metrics"] if m["id"] in base["rows"][0]]
+        rows = [{"cost": 0.0, **r} for r in pr["rows"]]
+        try:
+            fresh = aggregate(rows, row_metrics, k_values=spec.get("pass_k", []))
+        except (KeyError, TypeError) as exc:
+            problems.append(f"cannot recompute metrics from rows: {exc!r}")
+        else:
+            for k, v in fresh.items():
+                if k not in pr["metrics"]:
+                    continue
+                got = pr["metrics"][k]
+                if (v is None) != (got is None) or (v is not None and abs(v - got) > 1e-6):
+                    problems.append(f"metric {k}: report says {got}, rows give {v}")
+
+    # 7. Ratchet: only when the eval-set version is unchanged
     if base_spec and base_spec.get("eval_set_version") == spec.get("eval_set_version"):
         new_m = {m["id"]: m for m in spec["metrics"]}
         for om in base_spec["metrics"]:

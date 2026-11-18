@@ -80,3 +80,25 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi s�
   `flaky_regression` hỏng 12 item ở đúng 1/5 seed: pass_rate chỉ giảm 0.064, còn pass^5 của 12 item đó về 0. Ở lần chạy này pass_rate cũng bị chặn nhờ CI [−0.114, −0.014] (12 item cùng lệch nên bootstrap thấy rõ) — nhưng đó là may: lỗi 1/5 seed chỉ ở 2–3 item thì CI chạm 0 và pass_rate lọt; **pass_hat_5 mới là lớp chặn ổn định**.
 - **Scorecard** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline reports/baseline_v2.json`): `mutation score 3/3 · false alarms 0`.
 - **Giới hạn cỡ mẫu:** bug chỉ xuất hiện ở 1/3 seed (`rare`: seed chia hết cho 3) — trong bộ 11/22/33/44/55 chỉ seed 33 dính → với 5 seed, việc bắt được phụ thuộc bộ seed chọn (bộ khác có thể dính 1 hoặc 2 seed, hoặc với LLM thật thì lúc có lúc không). 5 seed không đủ để phát hiện ổn định lỗi hiếm; cần nhiều trial hơn chứ **không hạ threshold** cho tới khi gate "bắt được".
+
+### M7 — chống gian lận eval (`integrity_check` + ratchet)
+
+- **Vấn đề:** gate chỉ đáng tin khi report đầu vào đáng tin. PR (hoặc agent) có thể "làm đẹp" report thay vì sửa lỗi → `gate.integrity_check` chạy **trước** mọi so sánh metric; có vấn đề thì exit 1 với dòng `INTEGRITY ...`.
+- **Gate kiểm gì** (so với *baseline*, không tin manifest của PR vì manifest cũng sửa được):
+
+| Trap | Dấu hiệu bị bắt | Kiểm tra |
+|---|---|---|
+| `evaluator_errors_as_nan` | metric NaN/inf, giá trị `None` ở row, `evaluator_failures` ≠ rỗng | NaN/inf · None · evaluator_failures |
+| `dropped_failing_rows` | số row ≠ items × seeds của baseline | đếm row |
+| `cherry_picked_seeds` | tập (item_id, seed) ≠ baseline; row trùng | so tập · phát hiện trùng |
+| `loosened_spec` | ngưỡng nới / bỏ blocking / bỏ metric hoặc slice / bỏ `no_significant_drop` | ratchet với `--base-spec` (chỉ khi cùng `eval_set_version`) |
+| (thêm) metrics sửa tay | `metrics` ≠ tính lại từ `rows` | recompute aggregate |
+| (thêm) relabel slice | slice tag của item ≠ baseline → hồi quy trượt khỏi slice gate | so tag theo `item_id` |
+
+- **Kết quả:** `python -m lab9.traps ...` → cả 4 trap công khai **exit 1**; `python -m lab9.mutation ...` → `mutation score 3/3 · false alarms 0`; baseline vs chính nó (có `--base-spec`) → merge; A/A Δ = 0. Có 12 unit test trên report tổng hợp (`tests/test_lab9_integrity.py`), gồm cả ca "siết ngưỡng / tăng version thì không bị chặn".
+- **Trap ẩn có thể còn lọt (giới hạn đã biết):**
+  - **Đã vá:** sửa tay `metrics` mà không đụng `rows`. Gate đọc `pr["metrics"]` để so ngưỡng, nên `integrity_check` giờ tính lại aggregate từ rows (`eval.aggregate`) và so khớp (sai số 1e-6); chỉ so metric report có khai báo, để không báo nhầm report tối thiểu.
+  - **Sửa giá trị trong rows** (đổi `False` thành `True`) và sửa `manifest.items`/`seeds` đồng thời: không kiểm được từ file; chỉ lộ khi CI chạy lại eval từ code (`eval-gate` tự sinh report mới thay vì tin file PR gửi).
+  - **Grader lỗi ở metric không nằm trong spec** hoặc metric mới thêm sau baseline: `graded` chỉ xét metric có trong spec **và** có ở row của baseline.
+  - **Ratchet qua đổi `eval_set_version`:** nới ngưỡng bằng cách "tăng version" vẫn hợp lệ theo luật; cần reviewer kiểm xem version tăng có lý do (thêm item thật) hay không.
+  - **Bug hiếm (1/3 seed):** xem giới hạn cỡ mẫu ở M6; integrity không giúp gì ở đây.
