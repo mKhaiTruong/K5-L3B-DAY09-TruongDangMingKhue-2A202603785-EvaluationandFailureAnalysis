@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 from lab8.console import utf8_stdio
@@ -18,23 +19,98 @@ from lab9 import stats
 from lab9.eval import SPEC, load_spec, per_item
 
 
+def _looser(label: str, old: dict, new: dict, old_blocking: bool, new_blocking: bool) -> list[str]:
+    """Return ratchet violations where `new` thresholds are looser than `old`."""
+    out = []
+
+    if old_blocking and not new_blocking:
+        out.append(f"ratchet: {label} is no longer blocking")
+
+    for key in ("max", "max_increase"):
+        if key in old and (key not in new or new[key] > old[key]):
+            out.append(f"ratchet: {label} {key} loosened {old[key]} -> {new.get(key)}")
+
+    if "min" in old and ("min" not in new or new["min"] < old["min"]):
+        out.append(f"ratchet: {label} min loosened {old['min']} -> {new.get('min')}")
+
+    if old.get("no_significant_drop") and not new.get("no_significant_drop"):
+        out.append(f"ratchet: {label} dropped no_significant_drop")
+
+    return out
+
+
 def integrity_check(pr: dict, base: dict, spec: dict, base_spec: dict | None = None) -> list[str]:
-    """M7 (Expert): refuse to compare reports that cannot be trusted. Return a list of problems
-    (empty = trustworthy). A gate that passes a broken report is worse than no gate.
-    Must catch at least:
-      - any metric value in pr["metrics"] that is NaN or inf
-      - len(pr["rows"]) != manifest items x len(manifest seeds)   (dropped / duplicated rows)
-      - the (item_id, seed) set of PR differs from the baseline's (cherry-picked seeds/items)
-      - pr["evaluator_failures"] non-empty, or a row whose value for a graded spec metric is
-        None (a crashed grader silently scores as "missing" and drops out of the mean)
-      - base_spec given and a threshold in spec is LOOSER than in base_spec for the same
-        eval-set version (ratchet: max may not rise, min may not fall, a blocking metric may
-        not become non-blocking, a metric may not disappear; the same for spec["slices"],
-        including dropping no_significant_drop)
-      - an item's slice tags in PR rows differ from the baseline's (relabelling an item out of a
-        slice hides its regression from the slice gate)"""
-    # TODO M7
-    return []
+    """Return reasons the PR report cannot be trusted (empty list = trustworthy).
+
+    Args:
+        pr: Eval report of the PR.
+        base: Eval report of main, the source of truth for items, seeds and slice tags.
+        spec: Metric spec of the PR.
+        base_spec: Metric spec of main; enables the ratchet check when given.
+
+    Returns:
+        List of problem strings, e.g. ["metric pass_rate is nan"].
+    """
+    problems: list[str] = []
+
+    # 1. NaN / inf in aggregated metrics
+    for k, v in pr["metrics"].items():
+        if isinstance(v, float) and not math.isfinite(v):
+            problems.append(f"metric {k} is {v}")
+
+    # 2. Row count: compare with the BASELINE manifest (the PR manifest can be forged)
+    bm       = base["manifest"]
+    expected = bm["items"] * len(bm["seeds"])
+    if len(pr["rows"]) != expected:
+        problems.append(f"rows {len(pr['rows'])} != expected {expected}")
+
+    # 3. Duplicate rows + (item_id, seed) set must equal the baseline's
+    pr_keys = [(r["item_id"], r["seed"]) for r in pr["rows"]]
+    b_keys  = {(r["item_id"], r["seed"]) for r in base["rows"]}
+    if len(set(pr_keys)) != len(pr_keys):
+        problems.append("duplicate (item_id, seed) rows")
+    if set(pr_keys) != b_keys:
+        problems.append(f"(item, seed) set differs from baseline: "
+                        f"missing {len(b_keys - set(pr_keys))}, extra {len(set(pr_keys) - b_keys)}")
+
+    # 4. Crashed graders: evaluator_failures or None values on graded metrics
+    if pr.get("evaluator_failures"):
+        problems.append(f"{len(pr['evaluator_failures'])} evaluator failure(s)")
+    graded = [m["id"] for m in spec["metrics"] if base["rows"] and m["id"] in base["rows"][0]]
+    for m in graded:
+        n_none = sum(1 for r in pr["rows"] if r.get(m) is None)
+        if n_none:
+            problems.append(f"{n_none} row(s) with {m}=None")
+
+    # 5. Slice tags must match the baseline's (no relabelling out of a slice)
+    b_tags = {r["item_id"]: sorted(r.get("slices") or []) for r in base["rows"]}
+    moved  = {r["item_id"] for r in pr["rows"]
+              if r["item_id"] in b_tags and sorted(r.get("slices") or []) != b_tags[r["item_id"]]}
+    if moved:
+        problems.append(f"slice tags changed for: {', '.join(sorted(moved))}")
+
+    # 6. Ratchet: only when the eval-set version is unchanged
+    if base_spec and base_spec.get("eval_set_version") == spec.get("eval_set_version"):
+        new_m = {m["id"]: m for m in spec["metrics"]}
+        for om in base_spec["metrics"]:
+            nm = new_m.get(om["id"])
+            if nm is None:
+                problems.append(f"ratchet: metric {om['id']} removed")
+                continue
+            problems += _looser(f"metric {om['id']}", om.get("threshold", {}), nm.get("threshold", {}),
+                                om.get("blocking", False), nm.get("blocking", False))
+
+        new_s = {(s["name"], s["metric"]): s for s in spec.get("slices") or []}
+        for os_ in base_spec.get("slices") or []:
+            key = (os_["name"], os_["metric"])
+            ns  = new_s.get(key)
+            if ns is None:
+                problems.append(f"ratchet: slice {key[0]}/{key[1]} removed")
+                continue
+            problems += _looser(f"slice {key[0]}/{key[1]}", os_, ns,
+                                os_.get("blocking", False), ns.get("blocking", False))
+
+    return problems
 
 
 def slice_check(pr: dict, base: dict, spec: dict) -> tuple[list[str], list[str]]:
