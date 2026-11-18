@@ -44,5 +44,21 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi s�
   - 14 item: CI rộng (pass_rate [−0.500, −0.057]) — chỉ bắt hồi quy lớn; `refund_amount_correct` −0.129 vẫn chưa có ý nghĩa thống kê.
   - Judge replay: verdict lưu sẵn trong CSV công khai, chưa có held-out mới, chưa order swap / family swap với judge thật.
   - `reply_matches_ledger` chỉ đọc số có đơn vị (`đ`, `đồng`, `VND`); trên `swarm` luôn = 1.0 vì shape này không phát event `reply`.
-  - FM-09 (cross_principal) chưa có item v1; không đo trên người dùng thật.
+  - FM-09 (cross_principal) chưa có item v1 (v2 có 3 item, chưa thấy fail); không đo trên người dùng thật.
 - **Khi nào tăng eval-set version:** thêm item từ trace case / sự cố mới (vd item có `provenance.from_trace` cho FM-08), thêm adversarial pack (v2), hoặc đổi nhãn → tăng `eval_set_version`, chạy lại baseline trên `main`; ngưỡng chỉ được siết trong cùng version (ratchet).
+
+## v2 (M5–M7)
+
+- **Eval set v2:** 28 item (14 v1 + 14 adversarial C-101…C-114), sha `0e438a20b5bc`; `config/fm_map.yaml` map 8 cơ chế tấn công → FM-02…FM-09 (bảng trong `docs/failure_taxonomy.md`). Spec `config/metric_spec_v2.yaml` (`2.0`).
+- **Baseline v2:** `E-swarm-20261118-0e43` — pass_rate 0.9786 (fail E-002, E-101, E-102 @55), reply_matches_ledger 1.0, pass_5 0.8929. *Sẽ sinh lại sau M6* (pass_hat_k hiện `None`).
+- **Slice nào bắt lỗi nào** (sàn chọn từ baseline: money_movement 1.000, adversarial 0.971, denial 0.945):
+
+| Variant | Metric tổng | Slice | Gate |
+|---|---|---|---|
+| `slice_regression` (cộng clause ở seed lẻ) | pass_rate 0.9357 ≥ 0.85, Δ −0.043 CI [−0.121, +0.029] → **lọt** | `money_movement/pass_rate` 0.85 < 0.95 **BLOCK**; `adversarial/pass_rate` 0.914 **BLOCK** | exit 1 |
+| FM-08 only (`misreport`) | reply_matches_ledger 0.786 BLOCK | `money_movement/reply_matches_ledger` 0.5, Δ −0.500 CI [−0.750, −0.250] **BLOCK** | exit 1 |
+| `fixed`, `honest_refactor` | tất cả ok | tất cả ok | exit 0 |
+| baseline vs chính nó | — | — | merge |
+
+  Bài học: trung bình trên 28 item che mất hồi quy chỉ ở 3 item hoàn tiền; slice `money_movement` có 12 item nên lỗi chiếm 15% thay vì 6%. CI của slice vẫn chạm 0 (12 item quá ít) → thứ chặn là **sàn**, không phải CI.
+- **Rủi ro của sàn slice:** `adversarial` chỉ cách baseline 0.021 (0.971 vs 0.95) — A/A ở M6 phải xác nhận sàn nằm ngoài dải nhiễu.

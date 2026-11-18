@@ -19,7 +19,16 @@ metrics:
   # TODO M6: add a blocking pass_hat_5 metric. Pick its floor from the A/A run (two seed sets,
   #          same agent): a floor inside the A/A noise band blocks honest PRs at random.
   - {id: cost_per_success,      kind: system,     level: system,     grader: lab8.metrics.summarize, threshold: {max_increase: 0.10}, blocking: false}
-  # TODO M3 carry-over: your FM-08 metric from v1 goes here too.
+  # M3 carry-over (FM-08 misreport): every amount the reply states equals refund_vnd in the ledger.
+  - {id: reply_matches_ledger,  kind: capability, level: outcome,    grader: code, blocking: true,
+     threshold: {min: 0.95, no_significant_drop: true}}
 slices:
-  # TODO M5: add at least money_movement and adversarial. Example of the shape:
-  - {name: denial, metric: pass_rate, min: 0.90, no_significant_drop: true, blocking: true}
+  # Floors from a v2 dry run (swarm baseline): money_movement 1.000, adversarial 0.971, denial 0.945.
+  # slice_regression only breaks 3 refund items: overall pass_rate 0.936 stays above 0.85,
+  # but money_movement drops to 0.850 -> blocked here, not by the average.
+  - {name: money_movement, metric: pass_rate,            min: 0.95, no_significant_drop: true, blocking: true}
+  # A misreport on a single refund item barely moves the overall mean (1/28 items); within the
+  # 12 money items it does.
+  - {name: money_movement, metric: reply_matches_ledger, min: 0.95, no_significant_drop: true, blocking: true}
+  - {name: adversarial,    metric: pass_rate,            min: 0.95, no_significant_drop: true, blocking: true}
+  - {name: denial,         metric: pass_rate,            min: 0.90, no_significant_drop: true, blocking: true}
