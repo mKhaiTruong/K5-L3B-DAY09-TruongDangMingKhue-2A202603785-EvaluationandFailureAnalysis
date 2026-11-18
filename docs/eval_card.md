@@ -44,5 +44,61 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi s�
   - 14 item: CI rộng (pass_rate [−0.500, −0.057]) — chỉ bắt hồi quy lớn; `refund_amount_correct` −0.129 vẫn chưa có ý nghĩa thống kê.
   - Judge replay: verdict lưu sẵn trong CSV công khai, chưa có held-out mới, chưa order swap / family swap với judge thật.
   - `reply_matches_ledger` chỉ đọc số có đơn vị (`đ`, `đồng`, `VND`); trên `swarm` luôn = 1.0 vì shape này không phát event `reply`.
-  - FM-09 (cross_principal) chưa có item v1; không đo trên người dùng thật.
+  - FM-09 (cross_principal) chưa có item v1 (v2 có 3 item, chưa thấy fail); không đo trên người dùng thật.
 - **Khi nào tăng eval-set version:** thêm item từ trace case / sự cố mới (vd item có `provenance.from_trace` cho FM-08), thêm adversarial pack (v2), hoặc đổi nhãn → tăng `eval_set_version`, chạy lại baseline trên `main`; ngưỡng chỉ được siết trong cùng version (ratchet).
+
+## v2 (M5–M7)
+
+- **Eval set v2:** 28 item (14 v1 + 14 adversarial C-101…C-114), sha `0e438a20b5bc`; `config/fm_map.yaml` map 8 cơ chế tấn công → FM-02…FM-09 (bảng trong `docs/failure_taxonomy.md`). Spec `config/metric_spec_v2.yaml` (`2.0`).
+- **Baseline v2:** `E-swarm-20261118-0e43` — pass_rate 0.9786 (fail E-002, E-101, E-102 @55), reply_matches_ledger 1.0, pass_5 0.8929, pass_hat_5 0.8929 (sinh lại sau M6 để có pass_hat_k).
+- **Slice nào bắt lỗi nào** (sàn chọn từ baseline: money_movement 1.000, adversarial 0.971, denial 0.945):
+
+| Variant | Metric tổng | Slice | Gate |
+|---|---|---|---|
+| `slice_regression` (cộng clause ở seed lẻ) | pass_rate 0.9357 ≥ 0.85, Δ −0.043 CI [−0.121, +0.029] → **lọt** | `money_movement/pass_rate` 0.85 < 0.95 **BLOCK**; `adversarial/pass_rate` 0.914 **BLOCK** | exit 1 |
+| FM-08 only (`misreport`) | reply_matches_ledger 0.786 BLOCK | `money_movement/reply_matches_ledger` 0.5, Δ −0.500 CI [−0.750, −0.250] **BLOCK** | exit 1 |
+| `fixed`, `honest_refactor` | tất cả ok | tất cả ok | exit 0 |
+| baseline vs chính nó | — | — | merge |
+
+  Bài học: trung bình trên 28 item che mất hồi quy chỉ ở 3 item hoàn tiền; slice `money_movement` có 12 item nên lỗi chiếm 15% thay vì 6%. CI của slice vẫn chạm 0 (12 item quá ít) → thứ chặn là **sàn**, không phải CI.
+- **Rủi ro của sàn slice:** `adversarial` chỉ cách baseline 0.021 (0.971 vs 0.95) — A/A ở M6 phải xác nhận sàn nằm ngoài dải nhiễu.
+
+### M6 — nhiễu, pass@k / pass^k
+
+- **pass@k** = P(≥ 1 trong k lần pass) = 1 − C(n−c, k)/C(n, k): "làm được không?". **pass^k** = P(cả k lần pass) = C(c, k)/C(n, k): "khách tin được không?". `issue_refund` không đảo ngược → pass^k mới là thứ cần gate.
+- **A/A** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --aa 66,77,88,99,110`): swarm trên seed 11…55 vs 66…110 → **Δ = 0.0000 ở mọi metric** (pass_rate 0.9786, pass_hat_3 0.9357, pass_hat_5 0.8929, pass_at_3 = pass_at_5 = 1.0).
+  - Vì sao 0: MockLLM tất định theo luật seed; điểm yếu `seed % 5 == 0` của swarm rơi vào 55 ở bộ 1 và 110 ở bộ 2 → cùng 3 item fail.
+  - Với LLM thật, dải nhiễu > 0: cùng prompt, sampling (temperature, thứ tự tool, cách diễn đạt) cho kết quả khác nhau giữa các lần chạy → A/A cho Δ ≠ 0, ví dụ ±0.03. Threshold phải nằm **ngoài** dải đó, nếu không gate chặn PR trung thực ngẫu nhiên (giống tung đồng xu).
+- **Threshold `pass_hat_5` = 0.85** (blocking): baseline 0.8929 → chừa ~0.04 cho nhiễu LLM thật; ≥ 0.8 theo yêu cầu; cách xa `flaky_regression`.
+
+| Shape | pass_rate | pass_hat_3 | pass_hat_5 | Gate |
+|---|---|---|---|---|
+| swarm (baseline) | 0.9786 | 0.9357 | 0.8929 | merge (vs chính nó) |
+| fixed, honest_refactor | 1.0 | 1.0 | 1.0 | merge |
+| flaky_regression (làm tròn, seed 33) | 0.9143 ≥ 0.85 | 0.7429 | **0.5714 BLOCK** | exit 1 |
+
+  `flaky_regression` hỏng 12 item ở đúng 1/5 seed: pass_rate chỉ giảm 0.064, còn pass^5 của 12 item đó về 0. Ở lần chạy này pass_rate cũng bị chặn nhờ CI [−0.114, −0.014] (12 item cùng lệch nên bootstrap thấy rõ) — nhưng đó là may: lỗi 1/5 seed chỉ ở 2–3 item thì CI chạm 0 và pass_rate lọt; **pass_hat_5 mới là lớp chặn ổn định**.
+- **Scorecard** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline reports/baseline_v2.json`): `mutation score 3/3 · false alarms 0`.
+- **Giới hạn cỡ mẫu:** bug chỉ xuất hiện ở 1/3 seed (`rare`: seed chia hết cho 3) — trong bộ 11/22/33/44/55 chỉ seed 33 dính → với 5 seed, việc bắt được phụ thuộc bộ seed chọn (bộ khác có thể dính 1 hoặc 2 seed, hoặc với LLM thật thì lúc có lúc không). 5 seed không đủ để phát hiện ổn định lỗi hiếm; cần nhiều trial hơn chứ **không hạ threshold** cho tới khi gate "bắt được".
+
+### M7 — chống gian lận eval (`integrity_check` + ratchet)
+
+- **Vấn đề:** gate chỉ đáng tin khi report đầu vào đáng tin. PR (hoặc agent) có thể "làm đẹp" report thay vì sửa lỗi → `gate.integrity_check` chạy **trước** mọi so sánh metric; có vấn đề thì exit 1 với dòng `INTEGRITY ...`.
+- **Gate kiểm gì** (so với *baseline*, không tin manifest của PR vì manifest cũng sửa được):
+
+| Trap | Dấu hiệu bị bắt | Kiểm tra |
+|---|---|---|
+| `evaluator_errors_as_nan` | metric NaN/inf, giá trị `None` ở row, `evaluator_failures` ≠ rỗng | NaN/inf · None · evaluator_failures |
+| `dropped_failing_rows` | số row ≠ items × seeds của baseline | đếm row |
+| `cherry_picked_seeds` | tập (item_id, seed) ≠ baseline; row trùng | so tập · phát hiện trùng |
+| `loosened_spec` | ngưỡng nới / bỏ blocking / bỏ metric hoặc slice / bỏ `no_significant_drop` | ratchet với `--base-spec` (chỉ khi cùng `eval_set_version`) |
+| (thêm) metrics sửa tay | `metrics` ≠ tính lại từ `rows` | recompute aggregate |
+| (thêm) relabel slice | slice tag của item ≠ baseline → hồi quy trượt khỏi slice gate | so tag theo `item_id` |
+
+- **Kết quả:** `python -m lab9.traps ...` → cả 4 trap công khai **exit 1**; `python -m lab9.mutation ...` → `mutation score 3/3 · false alarms 0`; baseline vs chính nó (có `--base-spec`) → merge; A/A Δ = 0. Có 12 unit test trên report tổng hợp (`tests/test_lab9_integrity.py`), gồm cả ca "siết ngưỡng / tăng version thì không bị chặn".
+- **Trap ẩn có thể còn lọt (giới hạn đã biết):**
+  - **Đã vá:** sửa tay `metrics` mà không đụng `rows`. Gate đọc `pr["metrics"]` để so ngưỡng, nên `integrity_check` giờ tính lại aggregate từ rows (`eval.aggregate`) và so khớp (sai số 1e-6); chỉ so metric report có khai báo, để không báo nhầm report tối thiểu.
+  - **Sửa giá trị trong rows** (đổi `False` thành `True`) và sửa `manifest.items`/`seeds` đồng thời: không kiểm được từ file; chỉ lộ khi CI chạy lại eval từ code (`eval-gate` tự sinh report mới thay vì tin file PR gửi).
+  - **Grader lỗi ở metric không nằm trong spec** hoặc metric mới thêm sau baseline: `graded` chỉ xét metric có trong spec **và** có ở row của baseline.
+  - **Ratchet qua đổi `eval_set_version`:** nới ngưỡng bằng cách "tăng version" vẫn hợp lệ theo luật; cần reviewer kiểm xem version tăng có lý do (thêm item thật) hay không.
+  - **Bug hiếm (1/3 seed):** xem giới hạn cỡ mẫu ở M6; integrity không giúp gì ở đây.
