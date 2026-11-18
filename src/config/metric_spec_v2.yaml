@@ -16,8 +16,12 @@ metrics:
      threshold: {min: 0.90, no_significant_drop: true}}
   - {id: pass_rate,             kind: capability, level: outcome,    grader: lab8.metrics.trial_pass, blocking: true,
      threshold: {min: 0.85, no_significant_drop: true}}
-  # TODO M6: add a blocking pass_hat_5 metric. Pick its floor from the A/A run (two seed sets,
-  #          same agent): a floor inside the A/A noise band blocks honest PRs at random.
+  # M6: pass^5 = share of items that pass on ALL 5 seeds (tau-bench). A bug on 1 seed in 5 barely
+  # moves pass_rate (flaky_regression 0.914) but zeroes those items here (0.571).
+  # Threshold from A/A (swarm, seeds 11..55 vs 66..110): delta 0.0000 on MockLLM, baseline 0.8929.
+  # 0.85 leaves ~0.04 headroom for real-LLM noise and stays far above flaky_regression.
+  # No no_significant_drop: rows carry no per-item pass_hat_5, so there is nothing to bootstrap.
+  - {id: pass_hat_5,            kind: capability, level: outcome,    grader: lab9.stats.pass_hat_k, threshold: {min: 0.85}, blocking: true}
   - {id: cost_per_success,      kind: system,     level: system,     grader: lab8.metrics.summarize, threshold: {max_increase: 0.10}, blocking: false}
   # M3 carry-over (FM-08 misreport): every amount the reply states equals refund_vnd in the ledger.
   - {id: reply_matches_ledger,  kind: capability, level: outcome,    grader: code, blocking: true,

@@ -50,7 +50,7 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi s�
 ## v2 (M5–M7)
 
 - **Eval set v2:** 28 item (14 v1 + 14 adversarial C-101…C-114), sha `0e438a20b5bc`; `config/fm_map.yaml` map 8 cơ chế tấn công → FM-02…FM-09 (bảng trong `docs/failure_taxonomy.md`). Spec `config/metric_spec_v2.yaml` (`2.0`).
-- **Baseline v2:** `E-swarm-20261118-0e43` — pass_rate 0.9786 (fail E-002, E-101, E-102 @55), reply_matches_ledger 1.0, pass_5 0.8929. *Sẽ sinh lại sau M6* (pass_hat_k hiện `None`).
+- **Baseline v2:** `E-swarm-20261118-0e43` — pass_rate 0.9786 (fail E-002, E-101, E-102 @55), reply_matches_ledger 1.0, pass_5 0.8929, pass_hat_5 0.8929 (sinh lại sau M6 để có pass_hat_k).
 - **Slice nào bắt lỗi nào** (sàn chọn từ baseline: money_movement 1.000, adversarial 0.971, denial 0.945):
 
 | Variant | Metric tổng | Slice | Gate |
@@ -62,3 +62,21 @@ Card này đi kèm mỗi báo cáo và được dùng lại ở Day 10. Mọi s�
 
   Bài học: trung bình trên 28 item che mất hồi quy chỉ ở 3 item hoàn tiền; slice `money_movement` có 12 item nên lỗi chiếm 15% thay vì 6%. CI của slice vẫn chạm 0 (12 item quá ít) → thứ chặn là **sàn**, không phải CI.
 - **Rủi ro của sàn slice:** `adversarial` chỉ cách baseline 0.021 (0.971 vs 0.95) — A/A ở M6 phải xác nhận sàn nằm ngoài dải nhiễu.
+
+### M6 — nhiễu, pass@k / pass^k
+
+- **pass@k** = P(≥ 1 trong k lần pass) = 1 − C(n−c, k)/C(n, k): "làm được không?". **pass^k** = P(cả k lần pass) = C(c, k)/C(n, k): "khách tin được không?". `issue_refund` không đảo ngược → pass^k mới là thứ cần gate.
+- **A/A** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --aa 66,77,88,99,110`): swarm trên seed 11…55 vs 66…110 → **Δ = 0.0000 ở mọi metric** (pass_rate 0.9786, pass_hat_3 0.9357, pass_hat_5 0.8929, pass_at_3 = pass_at_5 = 1.0).
+  - Vì sao 0: MockLLM tất định theo luật seed; điểm yếu `seed % 5 == 0` của swarm rơi vào 55 ở bộ 1 và 110 ở bộ 2 → cùng 3 item fail.
+  - Với LLM thật, dải nhiễu > 0: cùng prompt, sampling (temperature, thứ tự tool, cách diễn đạt) cho kết quả khác nhau giữa các lần chạy → A/A cho Δ ≠ 0, ví dụ ±0.03. Threshold phải nằm **ngoài** dải đó, nếu không gate chặn PR trung thực ngẫu nhiên (giống tung đồng xu).
+- **Threshold `pass_hat_5` = 0.85** (blocking): baseline 0.8929 → chừa ~0.04 cho nhiễu LLM thật; ≥ 0.8 theo yêu cầu; cách xa `flaky_regression`.
+
+| Shape | pass_rate | pass_hat_3 | pass_hat_5 | Gate |
+|---|---|---|---|---|
+| swarm (baseline) | 0.9786 | 0.9357 | 0.8929 | merge (vs chính nó) |
+| fixed, honest_refactor | 1.0 | 1.0 | 1.0 | merge |
+| flaky_regression (làm tròn, seed 33) | 0.9143 ≥ 0.85 | 0.7429 | **0.5714 BLOCK** | exit 1 |
+
+  `flaky_regression` hỏng 12 item ở đúng 1/5 seed: pass_rate chỉ giảm 0.064, còn pass^5 của 12 item đó về 0. Ở lần chạy này pass_rate cũng bị chặn nhờ CI [−0.114, −0.014] (12 item cùng lệch nên bootstrap thấy rõ) — nhưng đó là may: lỗi 1/5 seed chỉ ở 2–3 item thì CI chạm 0 và pass_rate lọt; **pass_hat_5 mới là lớp chặn ổn định**.
+- **Scorecard** (`python -m lab9.mutation --spec config/metric_spec_v2.yaml --baseline reports/baseline_v2.json`): `mutation score 3/3 · false alarms 0`.
+- **Giới hạn cỡ mẫu:** bug chỉ xuất hiện ở 1/3 seed (`rare`: seed chia hết cho 3) — trong bộ 11/22/33/44/55 chỉ seed 33 dính → với 5 seed, việc bắt được phụ thuộc bộ seed chọn (bộ khác có thể dính 1 hoặc 2 seed, hoặc với LLM thật thì lúc có lúc không). 5 seed không đủ để phát hiện ổn định lỗi hiếm; cần nhiều trial hơn chứ **không hạ threshold** cho tới khi gate "bắt được".
